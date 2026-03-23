@@ -10,13 +10,13 @@ python3 send_signal.py \
 
 
 #Token not found for client .\
---exchangeSegment MCXFO \
---exchangeInstrumentID 486502 \
---orderType LIMIT \
---orderSide BUY \
---orderQuantity 100 \
---limitPrice 9100 \
---algoName TestAlgo
+# --exchangeSegment MCXFO \
+# --exchangeInstrumentID 486502 \
+# --orderType LIMIT \
+# --orderSide BUY \
+# --orderQuantity 100 \
+# --limitPrice 9100 \
+# --algoName TestAlgo
 
 
 # # WRONG SIGNAL WITH INCORRECT EXCHANGE SEGMENT

@@ -4,5 +4,4 @@ requests>=2.31.0
 aioredis
 motor
 aiohttp
-distutils
 uvloop

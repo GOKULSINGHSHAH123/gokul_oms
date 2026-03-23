@@ -64,7 +64,7 @@ def update_client_rms(client_id: str, algo_name: str, updates: dict) -> bool:
 
 def list_client_rms() -> list:
     """List client RMS documents where is_active=True and temp=True."""
-    return list(_get_collection().find({"is_active": True, "temp": True}, {"_id": 0}))
+    return list(_get_collection().find({"is_active": True, "is_temp": True}, {"_id": 0}))
 
 
 # ──────────────────────────────────────────────────────────────────────────────

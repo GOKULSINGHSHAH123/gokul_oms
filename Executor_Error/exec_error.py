@@ -298,6 +298,8 @@ class ExecErrorProcessor:
                                 {'client_id': 1}
                             )
                             async for doc in cursor:
+                                if 'client_id' not in doc or not doc['client_id']:
+                                    continue
                                 temp_order_data = order_data.copy()
                                 temp_order_data['clientID'] = doc['client_id']
                                 await self.close_exec_gate(temp_order_data)
@@ -409,7 +411,7 @@ class ExecErrorProcessor:
             # await self.stream_redis.hset(redis_key, client, 0)
             await self.db_mongo_client['Info']['client_rms_params'].update_one(
                 {'client_id': client, 'algo_name': algo},
-                {'$set': {'temp': False}}
+                {'$set': {'is_temp': False}}
             )
             await self.logger.info(f"Closed execution gate for client {client} and algo {algo}")
         except Exception as e:

@@ -196,6 +196,7 @@ class TradeExecutionEngine:
             # 'appOrderID': signal_feed['appOrderId'],
             'algoName': order['algoName'],
             'clientID': order['clientID'],
+            'broker': order.get('broker'),
             'upperPriceLimit': order['upperPriceLimit'],
             'lowerPriceLimit': order['lowerPriceLimit'],
             'quantity': order['orderQuantity'],
@@ -301,6 +302,7 @@ class TradeExecutionEngine:
                         await self.logger.info('Sending order to pending stream')
                         await self.modify_redis.hset('order_status:filled', order_slice['orderUniqueIdentifier'], '0')
                         pending_stream_insert = self.parse_pending_post(order_slice)
+                        print("pending_stream_insert",pending_stream_insert)
                         await self.stream_redis.xadd(self.output_stream, pending_stream_insert)
                         try:
                             if self.config.get('params', 'use_throttler', fallback='false').lower() == 'true':

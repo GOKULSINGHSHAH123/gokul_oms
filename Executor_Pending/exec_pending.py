@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-import aioredis
+import redis.asyncio as aioredis
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Dict, Any, List, Optional
 from configparser import ConfigParser
@@ -306,8 +306,8 @@ class QueueOrderProcessor:
                 "url": str(self.modify_url),
                 "headers": json.dumps(headers),
                 "body": json.dumps(modify_packet),
-                "retryCount": json.dumps(int(pending_order.get('retryCount'))),
-                "orderUniqueIdentifier": json.dumps(pending_order.get('orderUniqueIdentifier', '')),
+                "retryCount": str(int(pending_order.get('retryCount'))),
+                "orderUniqueIdentifier": pending_order.get('orderUniqueIdentifier', ''),
                 "appOrderID": app_order_id,
             }
 
@@ -534,9 +534,13 @@ class QueueOrderProcessor:
                 if self.config.get('params', 'use_throttler', fallback='false').lower() == 'true':
                     await self.logger.info(f"Sending modify request via throttler for order {app_order_id}")
                     await self.send_modify_request_via_throttler(modify_packet, pending_order, app_order_id)
-                    # order_flag = await self.modify_redis.hget('order_status:filled', pending_order['orderUniqueIdentifier'])
-                    # status = True if order_flag == '1' else False
-                    # await self.logger.info(f"Order {app_order_id} modify status via throttler: {status}")
+                    order_flag = await self.modify_redis.hget('order_status:filled', pending_order['orderUniqueIdentifier'])
+                    if order_flag == '1':
+                        await self.logger.info(f"Order {app_order_id} is already filled (detected after throttler send), marking as completed")
+                        if pending_order.get('orderType', '').lower() == 'buythensell':
+                            await self.logger.info(f"Order {app_order_id} is a buy then sell order.")
+                            await self.send_secondary_order(pending_order)
+                        return True  # Order completed, don't requeue
                 else:
                     self.logger.info(f"Sending direct modify request for order {app_order_id}")
                     status = await self.send_modify_request(modify_packet, pending_order)
