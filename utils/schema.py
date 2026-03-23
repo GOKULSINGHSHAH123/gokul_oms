@@ -21,8 +21,8 @@ from utils.db_helpers import get_mongo
 
 class Databases:
     ALGO_SIGNALS    = "algo_signals"       # daily signal + handoff collection
-    FINAL_RESPONSE  = "final_response_db"  # order outcome summaries
-    RMS             = "rms"                # algo / segment / client RMS config
+    FINAL_RESPONSE  = "Info"               # order outcome summaries
+    RMS             = "Info"                # algo / segment / client RMS config
     ERRORS          = "error_db"           # pipeline rejection records
 
 
@@ -52,7 +52,7 @@ class Collections:
     # RMS config (written by algo_service / segment_service / client_service, read by sync.py)
     ALGO_CONFIG     = "algo_rms_params"
     SEGMENT_CONFIG  = "segment_rms_params"
-    CLIENT_RMS      = "clinet_rms_params"    # note: intentional typo matches MongoDB collection name
+    CLIENT_RMS      = "client_rms_params"    # note: intentional typo matches MongoDB collection name
 
     # Error persistence (written exclusively by error_handler.py)
     FINAL_RESPONSE  = "final_response"

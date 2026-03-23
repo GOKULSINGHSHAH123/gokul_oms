@@ -29,6 +29,12 @@ def _get_collection():
     return get_mongo()[Databases.RMS][Collections.CLIENT_RMS]
 
 
+def _get_broker_map() -> dict:
+    """Return {client_id: broker} from client_creds collection."""
+    db = get_mongo()[Databases.RMS]
+    docs = db["client_rms_params"].find({}, {"_id": 0, "client_id": 1, "broker": 1})
+    return {d["client_id"]: d.get("broker", "") for d in docs if "client_id" in d}
+
 def get_client_rms(client_id: str, algo_name: str) -> Optional[dict]:
     """Fetch a single client RMS entry by client_id + algo_name."""
     return _get_collection().find_one(
@@ -57,8 +63,8 @@ def update_client_rms(client_id: str, algo_name: str, updates: dict) -> bool:
 
 
 def list_client_rms() -> list:
-    """List all client RMS documents."""
-    return list(_get_collection().find({}, {"_id": 0}))
+    """List client RMS documents where is_active=True and temp=True."""
+    return list(_get_collection().find({"is_active": True, "temp": True}, {"_id": 0}))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -84,6 +90,9 @@ def build_cache(redis_cfg=None) -> None:
         logger.warning("build_cache: no client_rms entries found in MongoDB — DB 12 not updated")
         return
 
+    broker_map = _get_broker_map()
+    print(broker_map)
+
     # Build algo_clients mapping (algo_name → [client_id, ...])
     algo_clients: dict = {}
     for entry in entries:
@@ -104,6 +113,7 @@ def build_cache(redis_cfg=None) -> None:
 
         rms_fields = {
             "quantity_multiplier": entry.get("quantity_multiplier", 1.0),
+            "broker": broker_map.get(client_id, ""),
         }
         pipe.hset("client_rms", f"{client_id}:{algo_name}", json.dumps(rms_fields))
 

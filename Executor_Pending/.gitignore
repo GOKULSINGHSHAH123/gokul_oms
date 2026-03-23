@@ -1,0 +1,5 @@
+venv
+*.log
+*.ini
+*.pyc
+__pycache__

@@ -6,12 +6,13 @@ Lazy-initialised, cached per process. All pipeline stages import from here.
 
 Redis instances:
   - data_redis : DBs 0, 2, 9, 11
-  - live_redis : DBs 10, 12, 14
+  - infra_redis : DBs 10, 12, 14
 
 MongoDB:
   - Single MongoClient, databases accessed by name via schema.py
 """
 
+import configparser
 import logging
 import os
 import redis
@@ -21,35 +22,50 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────
-# Configuration (override via environment variables)
+# Load config.ini (same directory as this file)
 # ─────────────────────────────────────────────────────────────
 
-REDIS_DATA_HOST: str = os.getenv("REDIS_DATA_HOST", "101.53.133.122")
-REDIS_DATA_PORT: int = int(os.getenv("REDIS_DATA_PORT", 6379))
-REDIS_DATA_PASSWORD: str = os.getenv("REDIS_DATA_PASSWORD", "Algo_infra_stock_options")
+_cfg = configparser.ConfigParser()
+_cfg_path = os.path.join(os.path.dirname(__file__), "config.ini")
+_cfg.read(_cfg_path)
 
-REDIS_LIVE_HOST: str = os.getenv("REDIS_LIVE_HOST", "101.53.133.122")
-REDIS_LIVE_PORT: int = int(os.getenv("REDIS_LIVE_PORT", 6379))
-REDIS_LIVE_PASSWORD: str = os.getenv("REDIS_LIVE_PASSWORD", "Algo_infra_stock_options")
+def _get(section: str, key: str, env_var: str | None = None) -> str:
+    if env_var and os.getenv(env_var):
+        return os.environ[env_var]
+    return _cfg.get(section, key)
 
-MONGO_URI: str = os.getenv(
-    "MONGO_URI",
-    "mongodb://mudraksh:NewStrongPassword@13.235.28.235:27017/"
-)
+def _getint(section: str, key: str, env_var: str | None = None) -> int:
+    if env_var and os.getenv(env_var):
+        return int(os.environ[env_var])
+    return _cfg.getint(section, key)
 
 # ─────────────────────────────────────────────────────────────
-# Redis DB constants — single source of truth
+# Configuration (env vars override config.ini)
+# ─────────────────────────────────────────────────────────────
+
+REDIS_DATA_HOST: str     = _get("dbParams",    "redisHost", "REDIS_DATA_HOST")
+REDIS_DATA_PORT: int     = _getint("dbParams", "redisPort", "REDIS_DATA_PORT")
+REDIS_DATA_PASSWORD: str = _get("dbParams",    "redisPass", "REDIS_DATA_PASSWORD")
+
+REDIS_INFRA_HOST: str     = _get("infraParams",    "redisHost", "REDIS_INFRA_HOST")
+REDIS_INFRA_PORT: int     = _getint("infraParams", "redisPort", "REDIS_INFRA_PORT")
+REDIS_INFRA_PASSWORD: str = _get("infraParams",    "redisPass", "REDIS_INFRA_PASSWORD")
+
+MONGO_URI: str = _get("dbParams", "MONGO_URI", "MONGO_URI")
+
+# ─────────────────────────────────────────────────────────────
+# Redis DB constants — sourced from config.ini
 # ─────────────────────────────────────────────────────────────
 
 class RedisDB:
-    SYMBOL_MAPPING = 0
-    QUALITY_STOCKS = 2
-    MARKET_DATA = 9
-    AUTH_TOKENS = 10
-    MASTERFILE = 11
-    CONFIG_CACHE = 12
-    LIVE_STREAMS = 12
-    THROTTLER =14
+    SYMBOL_MAPPING = _cfg.getint("dbParams",    "SYMBOL_MAPPING")
+    QUALITY_STOCKS = _cfg.getint("dbParams",    "QUALITY_STOCKS")
+    MARKET_DATA    = _cfg.getint("dbParams",    "MARKET_DATA")
+    AUTH_TOKENS    = _cfg.getint("infraParams", "AUTH_TOKENS")
+    MASTERFILE     = _cfg.getint("infraParams", "MASTERFILE")
+    CONFIG_CACHE   = _cfg.getint("infraParams", "CONFIG_CACHE")
+    LIVE_STREAMS   = _cfg.getint("infraParams", "LIVE_STREAMS")
+    THROTTLER      = _cfg.getint("infraParams", "THROTTLER")
     
 
 # ─────────────────────────────────────────────────────────────
@@ -57,7 +73,7 @@ class RedisDB:
 # ─────────────────────────────────────────────────────────────
 
 _data_pool: Optional[redis.ConnectionPool] = None
-_live_pool: Optional[redis.ConnectionPool] = None
+_infra_pool: Optional[redis.ConnectionPool] = None
 _mongo_client: Optional[pymongo.MongoClient] = None
 
 
@@ -82,37 +98,37 @@ def _get_data_pool() -> redis.ConnectionPool:
     return _data_pool
 
 
-def _get_live_pool() -> redis.ConnectionPool:
-    global _live_pool
+def _get_infra_pool() -> redis.ConnectionPool:
+    global _infra_pool
 
-    if _live_pool is None:
-        _live_pool = redis.ConnectionPool(
-            host=REDIS_LIVE_HOST,
-            port=REDIS_LIVE_PORT,
-            password=REDIS_LIVE_PASSWORD,
+    if _infra_pool is None:
+        _infra_pool = redis.ConnectionPool(
+            host=REDIS_INFRA_HOST,
+            port=REDIS_INFRA_PORT,
+            password=REDIS_INFRA_PASSWORD,
             decode_responses=True,
             max_connections=20,
         )
 
         logger.info(
-            "Redis LIVE pool initialised (%s:%s)",
-            REDIS_LIVE_HOST,
-            REDIS_LIVE_PORT
+            "Redis INFRA pool initialised (%s:%s)",
+            REDIS_INFRA_HOST,
+            REDIS_INFRA_PORT
         )
 
-    return _live_pool
+    return _infra_pool
 
 
 _pool_cache: dict = {}
 
 def get_redis(db: int) -> redis.Redis:
     if db not in _pool_cache:
-        live_dbs = {RedisDB.AUTH_TOKENS, RedisDB.CONFIG_CACHE, 
-                    RedisDB.LIVE_STREAMS, RedisDB.THROTTLER}
-        
-        host     = REDIS_LIVE_HOST if db in live_dbs else REDIS_DATA_HOST
-        port     = REDIS_LIVE_PORT if db in live_dbs else REDIS_DATA_PORT
-        password = REDIS_LIVE_PASSWORD if db in live_dbs else REDIS_DATA_PASSWORD
+        infra_dbs = {RedisDB.AUTH_TOKENS, RedisDB.CONFIG_CACHE,
+                     RedisDB.LIVE_STREAMS, RedisDB.THROTTLER}
+
+        host     = REDIS_INFRA_HOST if db in infra_dbs else REDIS_DATA_HOST
+        port     = REDIS_INFRA_PORT if db in infra_dbs else REDIS_DATA_PORT
+        password = REDIS_INFRA_PASSWORD if db in infra_dbs else REDIS_DATA_PASSWORD
 
         _pool_cache[db] = redis.ConnectionPool(
             host=host,
@@ -156,15 +172,15 @@ def close_connections() -> None:
     Close all DB connections.
     """
 
-    global _data_pool, _live_pool, _mongo_client
+    global _data_pool, _infra_pool, _mongo_client
 
     if _data_pool:
         _data_pool.disconnect()
         _data_pool = None
 
-    if _live_pool:
-        _live_pool.disconnect()
-        _live_pool = None
+    if _infra_pool:
+        _infra_pool.disconnect()
+        _infra_pool = None
 
     if _mongo_client:
         _mongo_client.close()

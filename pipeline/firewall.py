@@ -67,6 +67,9 @@ import multiprocessing
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from utils.db_helpers import get_redis, RedisDB
 from utils.setup_logging import get_logger
+from services.algo_service import list_algos
+from services.client_service import list_client_rms, _get_broker_map
+from services.segment_service import list_segments
 
 logger = get_logger(__name__)
 
@@ -86,7 +89,6 @@ ALGO_SIGNAL_STREAM  = "Algo_Signal"
 ERROR_STREAM        = "Error_Stream"
 ORDER_REQUEST_STREAM        = "Client_API_Place_Order"    # single shared stream for all clients
 ORDER_REQUEST_CONSUMER_GROUP = "group1"  # consumer group on order_request stream
-
 CONSUMER_GROUP = "oms_pipeline"
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -216,12 +218,11 @@ class CacheUpdater(threading.Thread):
     """
     Daemon thread that runs inside every worker process.
     Refreshes algo_configs / segment_rms_check / client_rms / algo_clients
-    from Redis every CACHE_REFRESH_INTERVAL seconds.
+    directly from MongoDB every CACHE_REFRESH_INTERVAL seconds.
     """
 
-    def __init__(self, redis_cfg):
+    def __init__(self):
         super().__init__(daemon=True, name="CacheUpdater")
-        self.redis_cfg = redis_cfg
 
     def run(self):
         logger.info("CacheUpdater started in pid=%s", os.getpid())
@@ -237,27 +238,56 @@ class CacheUpdater(threading.Thread):
                 logger.error("CacheUpdater refresh failed: %s", exc)
 
     def _refresh(self):
-        new_algo_configs      = self._fetch_hash(self.redis_cfg, "algo_configs")
-        new_segment_rms_check = self._fetch_hash(self.redis_cfg, "segment_rms_check")
-        new_client_rms        = self._fetch_hash(self.redis_cfg, "client_rms")
-        new_algo_clients      = self._fetch_hash(self.redis_cfg, "algo_clients")
+        # --- algo_configs ---
+        new_algo_configs = {}
+        for algo in list_algos(active_only=True):
+            algo_name = algo.get("algo_name")
+            if not algo_name:
+                continue
+            new_algo_configs[algo_name] = {
+                "status":                    algo.get("is_active", False),
+                "trade_limit_per_second":    algo.get("max_trade_limit_per_sec", 0),
+                "trade_limit_per_day":       algo.get("max_trade_limit_per_day", 0),
+                "allowed_segments":          algo.get("allowed_segments", []),
+                "lot_size":                  algo.get("lot_size", 1),
+                "lot_size_multiple":         algo.get("lot_size_multiple", 1),
+                "per_trade_lot_limit":       algo.get("max_order_lot_qty", 0),
+                "daily_lot_limit":           algo.get("max_net_lot_qty", 0),
+                "max_value_of_symbol_check": algo.get("max_order_value", 0),
+            }
+
+        # --- segment_rms_check ---
+        new_segment_rms_check = {}
+        for seg in list_segments():
+            seg_name = seg.get("segment")
+            if not seg_name:
+                continue
+            new_segment_rms_check[seg_name] = {
+                "oi_threshold":   seg.get("oi", 0),
+                "max_spread_pct": seg.get("spread", 100),
+            }
+
+        # --- client_rms + algo_clients ---
+        new_client_rms  = {}
+        new_algo_clients: dict = {}
+        broker_map = _get_broker_map()
+        for entry in list_client_rms():
+            client_id = entry.get("client_id")
+            algo_name = entry.get("algo_name")
+            if not client_id or not algo_name:
+                continue
+            new_client_rms[f"{client_id}:{algo_name}"] = {
+                "quantity_multiplier": entry.get("quantity_multiplier", 1.0),
+                "broker":              broker_map.get(client_id, ""),
+            }
+            new_algo_clients.setdefault(algo_name, []).append(client_id)
+
         with _MEMORY_LOCK:
             _MEMORY["algo_configs"]      = new_algo_configs
             _MEMORY["segment_rms_check"] = new_segment_rms_check
             _MEMORY["client_rms"]        = new_client_rms
             _MEMORY["algo_clients"]      = new_algo_clients
-        logger.debug("CacheUpdater refreshed in pid=%s", os.getpid())
-
-    @staticmethod
-    def _fetch_hash(redis_conn, hash_key: str) -> dict:
-        raw = redis_conn.hgetall(hash_key)
-        result = {}
-        for k, v in raw.items():
-            try:
-                result[k] = json.loads(v)
-            except (json.JSONDecodeError, TypeError):
-                result[k] = v
-        return result
+        logger.debug("CacheUpdater refreshed from MongoDB in pid=%s", os.getpid())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -295,7 +325,7 @@ def _worker_init(worker_index: int):
         os.getpid(), _consumer_name,
     )
 
-    updater = CacheUpdater(_proc_redis_cfg)
+    updater = CacheUpdater()
     updater.start()
     time.sleep(0.5)
 
@@ -582,7 +612,7 @@ def client_check_and_fanout(signal: dict, algo_cfg: dict) -> int:
 
     for client_id, reason in errors:
         _push_error(
-            error_type="client_signal_validation_error",
+            error_type="ClientOrderValidationError",
             signal=signal,
             reason=reason,
             stage="client_check",
@@ -602,6 +632,7 @@ def _process_single_client(
     client_rms = client_rms_table.get(rms_key)
 
     multiplier   = float(client_rms.get("quantity_multiplier", 1.0)) if client_rms else 1.0
+    broker       = client_rms.get("broker", "") if client_rms else ""
     original_qty = int(float(signal["orderQuantity"]))
     new_qty      = int(original_qty * multiplier)
     if new_qty <= 0:
@@ -645,6 +676,8 @@ def _process_single_client(
 
         "source": "signal_engine",
 
+        "broker":broker,
+
         "timestamp": int(time.time() * 1000),
     }
     # ── Single shared stream — clientID is inside the payload ─────────────────
@@ -679,19 +712,20 @@ def _push_error(error_type, signal, reason, stage, client_id=None):
 
 def _process_message(msg_id: str, fields: dict) -> None:
     t_start = time.monotonic()
+    print(_MEMORY["client_rms"])
     try:
         if "payload" in fields:
             try:
                 signal = json.loads(fields["payload"])
             except (json.JSONDecodeError, Exception) as exc:
                 _push_error(
-                    "algo_signal_validation_error", {},
+                    "AlgoSignalValidationError", {},
                     f"malformed JSON payload: {exc}", "signal_field_check",
                 )
                 return
             if not isinstance(signal, dict):
                 _push_error(
-                    "algo_signal_validation_error", {},
+                    "AlgoSignalValidationError", {},
                     f"payload must be a JSON object, got {type(signal).__name__}",
                     "signal_field_check",
                 )
@@ -701,11 +735,91 @@ def _process_message(msg_id: str, fields: dict) -> None:
 
         logger.debug("Processing msg_id=%s algoName=%s", msg_id, signal.get("algoName"))
 
+        # MCXFO adjustment: divide orderQuantity by Multiplier from masterfile
+        if signal.get("exchangeSegment") == "MCXFO":
+            instrument_id = str(signal.get("exchangeInstrumentID", ""))
+            logger.info(
+                "[MCXFO] Multiplier adjustment triggered | msg=%s algo=%s instrument=%s raw_qty=%s",
+                msg_id, signal.get("algoName"), instrument_id, signal.get("orderQuantity"),
+            )
+            try:
+                instrument = get_instrument(instrument_id)
+                if instrument is None:
+                    logger.error(
+                        "[MCXFO] Instrument '%s' not found in masterfile — cannot apply multiplier | msg=%s",
+                        instrument_id, msg_id,
+                    )
+                    _push_error(
+                        "AlgoSignalValidationError", signal,
+                        f"MCXFO multiplier adjustment failed: instrument '{instrument_id}' not found in masterfile",
+                        "signal_field_check",
+                    )
+                    return
+
+                raw_multiplier = instrument.get("Multiplier")
+                if raw_multiplier is None:
+                    logger.error(
+                        "[MCXFO] Multiplier field missing in masterfile for instrument '%s' | msg=%s",
+                        instrument_id, msg_id,
+                    )
+                    _push_error(
+                        "AlgoSignalValidationError", signal,
+                        f"MCXFO multiplier field missing in masterfile for instrument '{instrument_id}'",
+                        "signal_field_check",
+                    )
+                    return
+
+                multiplier = float(raw_multiplier)
+                if multiplier <= 0:
+                    logger.error(
+                        "[MCXFO] Invalid Multiplier=%s for instrument '%s' — must be > 0 | msg=%s",
+                        raw_multiplier, instrument_id, msg_id,
+                    )
+                    _push_error(
+                        "AlgoSignalValidationError", signal,
+                        f"MCXFO Multiplier={raw_multiplier} for instrument '{instrument_id}' must be > 0",
+                        "signal_field_check",
+                    )
+                    return
+
+                original_qty = float(signal["orderQuantity"])
+                adjusted_qty = original_qty / multiplier
+                signal["orderQuantity"] = adjusted_qty
+                logger.info(
+                    "[MCXFO] Multiplier applied | msg=%s algo=%s instrument=%s "
+                    "original_qty=%s multiplier=%s adjusted_qty=%s",
+                    msg_id, signal.get("algoName"), instrument_id,
+                    original_qty, multiplier, adjusted_qty,
+                )
+
+            except (ValueError, TypeError) as exc:
+                logger.error(
+                    "[MCXFO] Type conversion error during multiplier adjustment | msg=%s instrument=%s error=%s",
+                    msg_id, instrument_id, exc,
+                )
+                _push_error(
+                    "AlgoSignalValidationError", signal,
+                    f"MCXFO multiplier type error for instrument '{instrument_id}': {exc}",
+                    "signal_field_check",
+                )
+                return
+            except Exception as exc:
+                logger.exception(
+                    "[MCXFO] Unexpected error during multiplier adjustment | msg=%s instrument=%s error=%s",
+                    msg_id, instrument_id, exc,
+                )
+                _push_error(
+                    "AlgoSignalValidationError", signal,
+                    f"MCXFO multiplier unexpected error for instrument '{instrument_id}': {exc}",
+                    "signal_field_check",
+                )
+                return
+
         t1 = time.monotonic()
         try:
             signal_field_check(signal)
         except FieldValidationError as exc:
-            _push_error("algo_signal_validation_error", signal, str(exc), "signal_field_check")
+            _push_error("AlgoSignalValidationError", signal, str(exc), "signal_field_check")
             return
         t1_ms = (time.monotonic() - t1) * 1000
 
@@ -713,7 +827,7 @@ def _process_message(msg_id: str, fields: dict) -> None:
         try:
             algo_cfg = algo_check(signal)
         except Exception as exc:
-            _push_error("algo_signal_validation_error", signal, str(exc), "algo_check")
+            _push_error("AlgoSignalValidationError", signal, str(exc), "algo_check")
             return
         t2_ms = (time.monotonic() - t2) * 1000
 
@@ -721,7 +835,7 @@ def _process_message(msg_id: str, fields: dict) -> None:
         try:
             segment_check(signal)
         except Exception as exc:
-            _push_error("algo_signal_validation_error", signal, str(exc), "segment_check")
+            _push_error("AlgoSignalValidationError", signal, str(exc), "segment_check")
             return
         t3_ms = (time.monotonic() - t3) * 1000
 
@@ -730,7 +844,7 @@ def _process_message(msg_id: str, fields: dict) -> None:
             n = client_check_and_fanout(signal, algo_cfg)
             logger.info("Signal fanned out to %s client(s): algo=%s", n, signal.get("algoName"))
         except Exception as exc:
-            _push_error("client_signal_validation_error", signal, str(exc), "client_check")
+            _push_error("ClientOrderValidationError", signal, str(exc), "client_check")
             return
         t4_ms = (time.monotonic() - t4) * 1000
 

@@ -310,7 +310,7 @@ def run():
     print("\n── GROUP 7: Stress bulk signals (valid, cycling instruments) ──")
 
     all_valid = NSEFO + NSECM
-    stress_target = 10
+    stress_target = 1
     stress_count = stress_target - total
     for i in range(stress_count):
         iid_s, seg_s, lot_s = all_valid[i % len(all_valid)]

@@ -1,0 +1,6 @@
+pandas
+redis
+pymongo
+aioredis
+aiohttp
+motor

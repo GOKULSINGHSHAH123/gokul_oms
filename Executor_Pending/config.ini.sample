@@ -1,0 +1,36 @@
+[dbParams]
+redisHost = 139.5.189.229
+redisPort = 6379
+redisPass = mudraksh_test
+mongoHost = 139.5.189.229
+mongoPort = 27017
+mongoPass = RmsMock2Dabba
+mongoUser = admin
+
+[infraParams]
+redisHost = 139.5.189.229
+redisPort = 6379
+redisPass = mudraksh_test
+mongoHost = 139.5.189.229
+mongoPort = 27017
+mongoPass = RmsMock2Dabba
+mongoUser = admin
+
+[params]
+processing_concurrency = 10
+pending_queue = Pending_Queue
+input_stream = Pending_Order_Stream
+order_stream = Client_API_Place_Order
+error_stream = Error_Stream
+logging_stream = Logging_Stream
+modify_queue = modifyOrder
+modify_url = https://mduat.nirmalbang.com/interactive/orders
+; modify_url = https://developers.symphonyfintech.in/interactive/orders
+modify_workers = 4
+modify_min_limit = 0.1
+modify_max_limit = 5
+modify_interval = 5
+small_option_limit = 50
+throttler_stream = throttle_all_orders
+use_throttler = False
+skip_order_below = 5
