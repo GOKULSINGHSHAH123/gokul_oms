@@ -4,7 +4,7 @@ python3 send_signal.py \
 --exchangeInstrumentID 486502 \
 --orderType LIMIT \
 --orderSide BUY \
---orderQuantity 100 \
+--orderQuantity 150 \
 --limitPrice 9100 \
 --algoName TestAlgo
 

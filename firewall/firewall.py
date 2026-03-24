@@ -783,7 +783,19 @@ def _process_message(msg_id: str, fields: dict) -> None:
 
                 original_qty = float(signal["orderQuantity"])
                 adjusted_qty = original_qty / multiplier
-                signal["orderQuantity"] = adjusted_qty
+                if original_qty % multiplier != 0:
+                    logger.error(
+                        "[MCXFO] Qty %s not evenly divisible by multiplier %s | msg=%s instrument=%s",
+                        original_qty, multiplier, msg_id, instrument_id,
+                    )
+                    _push_error(
+                        "AlgoSignalValidationError", signal,
+                        f"MCXFO qty {original_qty} not evenly divisible by multiplier {multiplier} for instrument '{instrument_id}'",
+                        "signal_field_check",
+                    )
+                    return
+
+                signal["orderQuantity"] = int(adjusted_qty)
                 logger.info(
                     "[MCXFO] Multiplier applied | msg=%s algo=%s instrument=%s "
                     "original_qty=%s multiplier=%s adjusted_qty=%s",

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 
 _cfg = configparser.ConfigParser()
-_cfg_path = os.path.join(os.path.dirname(__file__), "config.ini")
+_cfg_path = os.path.join(os.path.dirname(__file__), '..', 'config.ini')
 _cfg.read(_cfg_path)
 
 def _get(section: str, key: str, env_var: str | None = None) -> str:

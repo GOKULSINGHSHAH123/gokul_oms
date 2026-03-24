@@ -55,9 +55,9 @@ class OrderDistributor(Process):
         self.redis_conn_client_ops_queue = get_redis_conn(
             config, self.logger, db_index=13, purpose="Client Operations")
 
-        self.stream_name = config['params']['redisStreamIncomingOrders']
+        self.stream_name = config['throttler']['redisStreamIncomingOrders']
         self.priority_threshold = float(
-            config['params']['order_priority_threshold'])
+            config['throttler']['order_priority_threshold'])
 
         self.initialize_redis_streams()
         self.logger.info("Order Distributor initialized")

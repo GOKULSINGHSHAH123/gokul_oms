@@ -47,7 +47,7 @@ class QueueOrderProcessor:
         self.pending_queue = pending_queue
         self.order_stream = order_stream
         self.modify_queue = modify_queue
-        self.throttler_stream_name = self.config.get('params', 'throttler_stream',fallback='throttle_all_orders')
+        self.throttler_stream_name = self.config.get('executor_pending', 'throttler_stream',fallback='throttle_all_orders')
 
 
         self.consumer_group = sys.argv[1]
@@ -55,10 +55,10 @@ class QueueOrderProcessor:
         self.modify_min_limit = modify_min_limit
         self.modify_max_limit = modify_max_limit
 
-        self.time_period = float(self.config['params'].get('modify_interval', 1))
-        self.modify_workers = self.config['params'].getint('modify_workers', 1)
-        self.modify_url = self.config.get('params', 'modify_url')
-        self.small_option_limit = self.config.getfloat('params', 'small_option_limit')
+        self.time_period = float(self.config['executor_pending'].get('modify_interval', 1))
+        self.modify_workers = self.config['executor_pending'].getint('modify_workers', 1)
+        self.modify_url = self.config.get('executor_pending', 'modify_url')
+        self.small_option_limit = self.config.getfloat('executor_pending', 'small_option_limit')
 
         self.token_map = {}
         
@@ -505,7 +505,7 @@ class QueueOrderProcessor:
                 # await self.logger.info(f"Modifying order {app_order_id} due to time elapsed")
 
                 new_price,ltp = await self.modify_order_price(pending_order)
-                skip_order_below_price = float(self.config.get('params', 'skip_order_below', fallback=1))
+                skip_order_below_price = float(self.config.get('executor_pending', 'skip_order_below', fallback=1))
 
                 if ltp < skip_order_below_price:
                     # await self.logger.info(f"Skipping order below {skip_order_below_price} with appOrderID: {app_order_id} LTP: {ltp} ModPrice: {new_price}")
@@ -525,7 +525,7 @@ class QueueOrderProcessor:
 
                 await self.logger.info(f"Modifying order {app_order_id} with new price: {new_price}")
 
-                if self.config.get('params', 'use_throttler', fallback='false').lower() == 'true':
+                if self.config.get('executor_pending', 'use_throttler', fallback='false').lower() == 'true':
                     await self.logger.info(f"Sending modify request via throttler for order {app_order_id}")
                     await self.send_modify_request_via_throttler(modify_packet, pending_order, app_order_id)
                     order_flag = await self.modify_redis.hget('order_status:filled', pending_order['orderUniqueIdentifier'])
@@ -823,19 +823,20 @@ async def main():
     """Main entry point for the application."""
     # Load configuration
     config = ConfigParser()
-    config.read('config.ini')
+    config.read(os.path.join(os.path.dirname(__file__), '..', 'config.ini'))
 
+    svc = config['executor_pending']
     payload = {
         'config': config,
-        'input_stream': config['params']['input_stream'],
-        'pending_queue': config['params']['pending_queue'],
-        'logging_stream': config['params']['logging_stream'],
-        'error_stream': config['params']['error_stream'],
-        'order_stream': config['params']['order_stream'],
-        'modify_queue': config['params']['modify_queue'],
-        'processing_concurrency': int(config['params']['processing_concurrency']),
-        'modify_min_limit': float(config['params']['modify_min_limit']),
-        'modify_max_limit': float(config['params']['modify_max_limit']),
+        'input_stream': svc['input_stream'],
+        'pending_queue': svc['pending_queue'],
+        'logging_stream': svc['logging_stream'],
+        'error_stream': svc['error_stream'],
+        'order_stream': svc['order_stream'],
+        'modify_queue': svc['modify_queue'],
+        'processing_concurrency': int(svc['processing_concurrency']),
+        'modify_min_limit': float(svc['modify_min_limit']),
+        'modify_max_limit': float(svc['modify_max_limit']),
     }
     
     # Create and run the queue-based order processor

@@ -8,11 +8,8 @@ import redis
 
 def check():
     config_paths = [
-        "config.ini",
         "../config.ini",
-        "firewall/config.ini",
-        "Executor_Client/config.ini",
-        "executor_throttler/config.ini",
+        "config.ini",
     ]
 
     cfg = configparser.ConfigParser()

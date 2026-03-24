@@ -246,8 +246,8 @@ class ClientOrderThrottler(Process):
         
         self.logger.info(f"ClientOrderThrottler initialized for client_id: {client_id} with limit_ops={limit_ops}")
         
-        self.error_stream = self.config.get('params', 'error_stream')
-        self.route = self.config.get('params','order_route')
+        self.error_stream = self.config.get('throttler', 'error_stream')
+        self.route = self.config.get('throttler','order_route')
         # Will be initialized in async_init
         self.redis_client_ops_async = None
         self.redis_order_mod_async = None
@@ -257,7 +257,7 @@ class ClientOrderThrottler(Process):
 
         # Rate limiting configuration
         self.max_orders_per_second = int(config.get(
-            'params', 'max_orders_per_second'))
+            'throttler', 'max_orders_per_second'))
 
         # Event loop and task management
         self.loop = None
@@ -268,9 +268,9 @@ class ClientOrderThrottler(Process):
         self.token_bucket = SlidingWindowRateLimiter(
             capacity=self.max_orders_per_second,
             refill_interval=1.0,
-            randomize=self.config.get('params', 'randomize_per_second').lower() == 'true',
-            randomize_interval=float(self.config.get('params', 'randomize_interval')),
-            min_capacity=int(self.config.get('params', 'min_orders_per_second')),
+            randomize=self.config.get('throttler', 'randomize_per_second').lower() == 'true',
+            randomize_interval=float(self.config.get('throttler', 'randomize_interval')),
+            min_capacity=int(self.config.get('throttler', 'min_orders_per_second')),
             logger=self.logger
         )
 

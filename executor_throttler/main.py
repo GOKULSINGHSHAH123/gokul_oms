@@ -74,7 +74,7 @@ def main():
         logger_name='main', log_dir="logs")
     logger.info("="*30 + "Executor Throttler started" + "="*40)
 
-    configfile = 'config.ini'
+    configfile = os.path.join(os.path.dirname(__file__), '..', 'config.ini')
     config = ConfigParser()
     config.read(configfile)
     logger.info(f"Loaded configuration from: {configfile}")
@@ -82,7 +82,7 @@ def main():
     process_manager = ProcessManager()
 
     order_distributor_processes = config.getint(
-        'params', 'order_distributor_processes', fallback=os.cpu_count())
+        'throttler', 'order_distributor_processes', fallback=os.cpu_count())
 
     for i in range(order_distributor_processes):
         od_exec_id = f"OrderDistributor-{i+1}"
@@ -94,7 +94,7 @@ def main():
     redis_conn_client_ops_queue = get_redis_conn(
         config, logger, db_index=13, purpose="Client Operations")
 
-    client_blacklist = [i.strip() for i in config.get('params', 'client_blacklist', fallback="").split(',')]
+    client_blacklist = [i.strip() for i in config.get('throttler', 'client_blacklist', fallback="").split(',')]
     logger.info(f"Client Blacklist: {client_blacklist}")
 
     while True:

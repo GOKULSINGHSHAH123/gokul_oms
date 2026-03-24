@@ -46,7 +46,7 @@ services:
     stop_signal: SIGINT
     stop_grace_period: 15s
     volumes:
-      - ../firewall/config.ini:/app/firewall/config.ini:ro
+      - ../config.ini:/app/config.ini:ro
 
   # ── Throttler — order distribution + per-client rate limiting ──
   oms-throttler:
@@ -57,7 +57,7 @@ services:
     stop_signal: SIGTERM
     stop_grace_period: 10s
     volumes:
-      - ../executor_throttler/config.ini:/app/executor_throttler/config.ini:ro
+      - ../config.ini:/app/config.ini:ro
 
   # ── Executor Client — trade execution (scalable) ───────────
   oms-exec-client:
@@ -68,7 +68,7 @@ services:
     stop_signal: SIGINT
     stop_grace_period: 15s
     volumes:
-      - ../Executor_Client/config.ini:/app/Executor_Client/config.ini:ro
+      - ../config.ini:/app/config.ini:ro
 
   # ── Executor Error — error stream processor (scalable) ─────
   oms-exec-error:
@@ -79,7 +79,7 @@ services:
     stop_signal: SIGINT
     stop_grace_period: 10s
     volumes:
-      - ../Executor_Error/config.ini:/app/Executor_Error/config.ini:ro
+      - ../config.ini:/app/config.ini:ro
 
   # ── Executor Pending — retry pending orders ────────────────
   oms-exec-pending:
@@ -90,4 +90,4 @@ services:
     stop_signal: SIGINT
     stop_grace_period: 15s
     volumes:
-      - ../Executor_Pending/config.ini:/app/Executor_Pending/config.ini:ro
+      - ../config.ini:/app/config.ini:ro

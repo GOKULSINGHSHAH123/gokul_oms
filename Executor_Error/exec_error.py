@@ -537,13 +537,14 @@ async def main():
     """Main entry point for the application."""
     # Load configuration
     config = ConfigParser()
-    config.read('config.ini')
+    config.read(os.path.join(os.path.dirname(__file__), '..', 'config.ini'))
 
+    svc = config['executor_error']
     payload = {
         'config': config,
-        'error_stream': config['params']['error_stream'],
-        'logging_stream': config['params']['logging_stream'],
-        'processing_concurrency': int(config['params']['processing_concurrency']),
+        'error_stream': svc['error_stream'],
+        'logging_stream': svc['logging_stream'],
+        'processing_concurrency': int(svc['processing_concurrency']),
     }
     
     # Create and run the queue-based order processor

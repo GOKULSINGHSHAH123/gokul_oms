@@ -63,7 +63,7 @@ class TradeExecutionEngine:
         self.broker_client = BrokerAPIClient(broker_url, route, self.config)
         self.order_slicer = OrderSlicer()
         
-        self.is_mock = True if config['params']['is_mock'] == 'True' else False
+        self.is_mock = True if config['executor_client']['is_mock'] == 'True' else False
 
         # Controls how many orders we process concurrently
         self.processing_concurrency = processing_concurrency
@@ -300,7 +300,7 @@ class TradeExecutionEngine:
                         print("pending_stream_insert",pending_stream_insert)
                         await self.stream_redis.xadd(self.output_stream, pending_stream_insert)
                         try:
-                            if self.config.get('params', 'use_throttler', fallback='false').lower() == 'true':
+                            if self.config.get('executor_client', 'use_throttler', fallback='false').lower() == 'true':
                                 await self.broker_client.send_order_via_throttler(order_slice, token, self.stream_redis)
                             else:
                                 signal_feed = await self.broker_client.send_order(order_slice, token)
@@ -648,17 +648,18 @@ async def main():
     """Main entry point for the application."""
     # Configuration (should be loaded from environment or config file)
     config = ConfigParser()
-    config.read('config.ini')
+    config.read(os.path.join(os.path.dirname(__file__), '..', 'config.ini'))
 
+    svc = config['executor_client']
     payload = {
         'config': config,
-        'input_stream': config['params']['input_stream'],
-        'output_stream': config['params']['output_stream'],
-        'logging_stream': config['params']['logging_stream'],
-        'error_stream': config['params']['error_stream'],
+        'input_stream': svc['input_stream'],
+        'output_stream': svc['output_stream'],
+        'logging_stream': svc['logging_stream'],
+        'error_stream': svc['error_stream'],
         'broker_url': config['url']['broker_url'],
         'route': config['url']['order_route'],
-        'processing_concurrency': int(config['params']['processing_concurrency']),
+        'processing_concurrency': int(svc['processing_concurrency']),
     }
     
     # Create and run the execution engine

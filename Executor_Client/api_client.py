@@ -16,7 +16,7 @@ class BrokerAPIClient:
         self.route = route
         self.session = None
         self.config = config
-        self.stream_name = self.config.get('params', 'throttler_stream',fallback='throttle_all_orders')
+        self.stream_name = self.config.get('executor_client', 'throttler_stream',fallback='throttle_all_orders')
 
     
     async def initialize(self):
