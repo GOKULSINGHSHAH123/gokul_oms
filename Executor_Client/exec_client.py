@@ -47,18 +47,13 @@ class TradeExecutionEngine:
         self.consumer_group = sys.argv[1]
         self.consumer_name = sys.argv[2]
 
-        logdir = f'{self.consumer_group}_Logs/{str(datetime.date.today())}/'
-        if not os.path.exists(logdir):
-            os.makedirs(logdir)
-        logfile = f'{logdir}{self.consumer_name}.log'
-
         logging.basicConfig(
-            level=logging.INFO,
-            filename=logfile,
-            filemode='a',
-            force=True,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-        )
+        level=logging.INFO,
+        stream=sys.stdout,
+        force=True,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    )
+
 
         logging.info(f"Starting Trade Execution Engine for {self.consumer_group} - {self.consumer_name}")
 

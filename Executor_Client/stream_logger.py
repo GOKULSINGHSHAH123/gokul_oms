@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 import multiprocessing
 import logging
-import os
+import sys
 
 
 class RedisStreamLogger:
@@ -31,9 +31,6 @@ class RedisStreamLogger:
     async def error(self, message):
         await self.log('ERROR', message, **self.added_packets )
         logging.error(message)
-        
-    # def exception(self, message, ):
-    #     self.log('EXCEPTION', message, self.added_packets )
 
     async def warning(self, message):
         await self.log('WARNING', message, **self.added_packets )
@@ -48,14 +45,13 @@ class RedisStreamLogger:
         logging.exception(message)
 
 class RedisStreamReader(multiprocessing.Process):
-    def __init__(self, redis_client, stream_key='logs', consumer_group='log_consumer_group', level=logging.INFO, log_file=f'logs/{datetime.now().replace(microsecond=0)}.log', check_interval=1.0, daemon=True):
+    def __init__(self, redis_client, stream_key='logs', consumer_group='log_consumer_group', level=logging.INFO, log_file=None, check_interval=1.0, daemon=True):
         super().__init__()
         self.daemon = daemon
         self.redis_client = redis_client
         self.stream_key = stream_key
         self.consumer_group = consumer_group
         self.consumer_name = f"log_consumer_{uuid.uuid4().hex[:6]}"
-        self.log_file = log_file
         self.check_interval = check_interval
         self.setup_logging(level=level)
         self.ensure_consumer_group()
@@ -66,19 +62,14 @@ class RedisStreamReader(multiprocessing.Process):
             self.redis_client.xgroup_create(
                 self.stream_key, self.consumer_group, mkstream=True)
         except redis.exceptions.ResponseError as e:
-            # Ignore error if the group already exists
             if "BUSYGROUP" not in str(e):
                 raise
 
     def setup_logging(self, level):
-        """Configure logging to file and return the logger."""
-        os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
-        if not os.path.exists(self.log_file):
-            with open(self.log_file, 'w'):
-                pass
+        """Configure logging to stdout."""
         logger = logging.getLogger()
         logger.setLevel(level)
-        handler = logging.FileHandler(self.log_file)
+        handler = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter('%(message)s')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
@@ -95,14 +86,11 @@ class RedisStreamReader(multiprocessing.Process):
                 logging.info(msg)
             elif level == 'ERROR':
                 logging.error(msg)
-            # elif level == "EXCEPTION":
-            #     logging.exception(msg)
             elif level == 'WARNING':
                 logging.warning(msg)
             elif level == 'DEBUG':
                 logging.debug(msg)
 
-            # Acknowledge the message
             self.redis_client.xack(
                 self.stream_key, self.consumer_group, message_id)
         except Exception as e:
@@ -112,7 +100,6 @@ class RedisStreamReader(multiprocessing.Process):
         """Main loop to read from Redis stream."""
         while True:
             try:
-                # Read new messages from the stream using XREADGROUP
                 messages = self.redis_client.xreadgroup(
                     groupname=self.consumer_group,
                     consumername=self.consumer_name,

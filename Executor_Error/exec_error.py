@@ -40,17 +40,11 @@ class ExecErrorProcessor:
         self.consumer_name = sys.argv[2]
         
         # Set up logging
-        logdir = f'{self.consumer_group}_Logs/{str(datetime.date.today())}/'
-        if not os.path.exists(logdir):
-            os.makedirs(logdir)
-        logfile = f'{logdir}{self.consumer_name}.log'
-
         logging.basicConfig(
-            level=logging.INFO,
-            filename=logfile,
-            filemode='a',
-            force=True,
-            format='%(asctime)s - %(levelname)s - %(message)s',
+        level=logging.INFO,
+        stream=sys.stdout,
+        force=True,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         )
 
         logging.info(f"Starting Queue-Based Order Processor for {self.consumer_group} - {self.consumer_name}")
@@ -411,7 +405,7 @@ class ExecErrorProcessor:
             # await self.stream_redis.hset(redis_key, client, 0)
             await self.db_mongo_client['Info']['client_rms_params'].update_one(
                 {'client_id': client, 'algo_name': algo},
-                {'$set': {'is_temp': False}}
+                {'$set': {'is_temp': True}}
             )
             await self.logger.info(f"Closed execution gate for client {client} and algo {algo}")
         except Exception as e:

@@ -63,17 +63,11 @@ class QueueOrderProcessor:
         self.token_map = {}
         
         # Set up logging
-        logdir = f'{self.consumer_group}_Logs/{str(datetime.date.today())}/'
-        if not os.path.exists(logdir):
-            os.makedirs(logdir)
-        logfile = f'{logdir}{self.consumer_name}.log'
-
         logging.basicConfig(
-            level=logging.INFO,
-            filename=logfile,
-            filemode='a',
-            force=True,
-            format='%(asctime)s - %(levelname)s - %(message)s',
+        level=logging.INFO,
+        stream=sys.stdout,
+        force=True,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         )
 
         logging.info(f"Starting Queue-Based Order Processor for {self.consumer_group} - {self.consumer_name}")

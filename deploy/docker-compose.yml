@@ -1,0 +1,93 @@
+# gokul_oms — Docker Compose
+#
+# Services:
+#   oms-firewall       — signal validation (spawns N worker processes internally)
+#   oms-throttler      — order distribution + rate limiting
+#   oms-exec-client    — trade execution on broker API
+#   oms-exec-error     — error stream processor
+#   oms-exec-pending   — retries pending orders
+#
+# Usage:
+#   docker compose -f deploy/docker-compose.yml build
+#   docker compose -f deploy/docker-compose.yml up -d
+#   docker compose -f deploy/docker-compose.yml logs -f [service]
+#   docker compose -f deploy/docker-compose.yml down
+
+x-oms: &oms-base
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  image: gokul-oms:latest
+  network_mode: host
+  restart: unless-stopped
+  init: true
+  environment: &oms-env
+    PYTHONUNBUFFERED: "1"
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "5"
+  healthcheck:
+    test: ["CMD", "python", "/app/healthcheck.py"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 10s
+
+services:
+
+  # ── Firewall — signal validation pipeline ──────────────────
+  oms-firewall:
+    <<: *oms-base
+    container_name: oms-firewall
+    working_dir: /app
+    command: ["python", "-m", "firewall.firewall"]
+    stop_signal: SIGINT
+    stop_grace_period: 15s
+    volumes:
+      - ../firewall/config.ini:/app/firewall/config.ini:ro
+
+  # ── Throttler — order distribution + per-client rate limiting ──
+  oms-throttler:
+    <<: *oms-base
+    container_name: oms-throttler
+    working_dir: /app/executor_throttler
+    command: ["python", "main.py"]
+    stop_signal: SIGTERM
+    stop_grace_period: 10s
+    volumes:
+      - ../executor_throttler/config.ini:/app/executor_throttler/config.ini:ro
+
+  # ── Executor Client — trade execution (scalable) ───────────
+  oms-exec-client:
+    <<: *oms-base
+    container_name: oms-exec-client-g1w1
+    working_dir: /app/Executor_Client
+    command: ["python", "exec_client.py", "group1", "worker1"]
+    stop_signal: SIGINT
+    stop_grace_period: 15s
+    volumes:
+      - ../Executor_Client/config.ini:/app/Executor_Client/config.ini:ro
+
+  # ── Executor Error — error stream processor (scalable) ─────
+  oms-exec-error:
+    <<: *oms-base
+    container_name: oms-exec-error-g1w1
+    working_dir: /app/Executor_Error
+    command: ["python", "exec_error.py", "group1", "worker1"]
+    stop_signal: SIGINT
+    stop_grace_period: 10s
+    volumes:
+      - ../Executor_Error/config.ini:/app/Executor_Error/config.ini:ro
+
+  # ── Executor Pending — retry pending orders ────────────────
+  oms-exec-pending:
+    <<: *oms-base
+    container_name: oms-exec-pending
+    working_dir: /app/Executor_Pending
+    command: ["python", "exec_pending.py", "group1", "worker1"]
+    stop_signal: SIGINT
+    stop_grace_period: 15s
+    volumes:
+      - ../Executor_Pending/config.ini:/app/Executor_Pending/config.ini:ro
