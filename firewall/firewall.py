@@ -65,11 +65,9 @@ import signal
 import threading
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from utils.db_helpers import get_redis, RedisDB
-from utils.setup_logging import get_logger
-from services.algo_service import list_algos
-from services.client_service import list_client_rms, _get_broker_map
-from services.segment_service import list_segments
+from firewall.db_helpers import get_redis, RedisDB
+from firewall.setup_logging import get_logger
+from firewall.services import list_algos, list_client_rms, _get_broker_map, list_segments
 
 logger = get_logger(__name__)
 
@@ -374,8 +372,10 @@ def signal_field_check(signal: dict) -> None:
 # Stage 2 — algo_check
 # ══════════════════════════════════════════════════════════════════════════════
 
+_IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
 def _seconds_until_midnight() -> int:
-    now      = datetime.datetime.now()
+    now      = datetime.datetime.now(_IST)
     midnight = (now + datetime.timedelta(days=1)).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -712,7 +712,6 @@ def _push_error(error_type, signal, reason, stage, client_id=None):
 
 def _process_message(msg_id: str, fields: dict) -> None:
     t_start = time.monotonic()
-    print(_MEMORY["client_rms"])
     try:
         if "payload" in fields:
             try:

@@ -1,15 +1,8 @@
 """
 db_helpers.py
 -------------
-Shared Redis + MongoDB connection manager.
-Lazy-initialised, cached per process. All pipeline stages import from here.
-
-Redis instances:
-  - data_redis : DBs 0, 2, 9, 11
-  - infra_redis : DBs 10, 12, 14
-
-MongoDB:
-  - Single MongoClient, databases accessed by name via schema.py
+Shared Redis + MongoDB connection manager for the firewall package.
+Lazy-initialised, cached per process.
 """
 
 import configparser
@@ -66,65 +59,22 @@ class RedisDB:
     CONFIG_CACHE   = _cfg.getint("infraParams", "CONFIG_CACHE")
     LIVE_STREAMS   = _cfg.getint("infraParams", "LIVE_STREAMS")
     THROTTLER      = _cfg.getint("infraParams", "THROTTLER")
-    
+
 
 # ─────────────────────────────────────────────────────────────
 # Connection pools
 # ─────────────────────────────────────────────────────────────
 
-_data_pool: Optional[redis.ConnectionPool] = None
-_infra_pool: Optional[redis.ConnectionPool] = None
 _mongo_client: Optional[pymongo.MongoClient] = None
-
-
-def _get_data_pool() -> redis.ConnectionPool:
-    global _data_pool
-
-    if _data_pool is None:
-        _data_pool = redis.ConnectionPool(
-            host=REDIS_DATA_HOST,
-            port=REDIS_DATA_PORT,
-            password=REDIS_DATA_PASSWORD,
-            decode_responses=True,
-            max_connections=20,
-        )
-
-        logger.info(
-            "Redis DATA pool initialised (%s:%s)",
-            REDIS_DATA_HOST,
-            REDIS_DATA_PORT
-        )
-
-    return _data_pool
-
-
-def _get_infra_pool() -> redis.ConnectionPool:
-    global _infra_pool
-
-    if _infra_pool is None:
-        _infra_pool = redis.ConnectionPool(
-            host=REDIS_INFRA_HOST,
-            port=REDIS_INFRA_PORT,
-            password=REDIS_INFRA_PASSWORD,
-            decode_responses=True,
-            max_connections=20,
-        )
-
-        logger.info(
-            "Redis INFRA pool initialised (%s:%s)",
-            REDIS_INFRA_HOST,
-            REDIS_INFRA_PORT
-        )
-
-    return _infra_pool
-
 
 _pool_cache: dict = {}
 
 def get_redis(db: int) -> redis.Redis:
     if db not in _pool_cache:
+        # MASTERFILE is under infraParams — include it in infra routing
         infra_dbs = {RedisDB.AUTH_TOKENS, RedisDB.CONFIG_CACHE,
-                     RedisDB.LIVE_STREAMS, RedisDB.THROTTLER}
+                     RedisDB.LIVE_STREAMS, RedisDB.THROTTLER,
+                     RedisDB.MASTERFILE}
 
         host     = REDIS_INFRA_HOST if db in infra_dbs else REDIS_DATA_HOST
         port     = REDIS_INFRA_PORT if db in infra_dbs else REDIS_DATA_PORT
@@ -134,20 +84,17 @@ def get_redis(db: int) -> redis.Redis:
             host=host,
             port=port,
             password=password,
-            db=db,                  # ← db goes HERE, on the pool
+            db=db,
             decode_responses=True,
             max_connections=20,
         )
-    return redis.Redis(connection_pool=_pool_cache[db])  # ← no db= here
+    return redis.Redis(connection_pool=_pool_cache[db])
+
 # ─────────────────────────────────────────────────────────────
 # MongoDB
 # ─────────────────────────────────────────────────────────────
 
 def get_mongo() -> pymongo.MongoClient:
-    """
-    Return shared MongoClient (lazy singleton)
-    """
-
     global _mongo_client
 
     if _mongo_client is None:
@@ -157,33 +104,6 @@ def get_mongo() -> pymongo.MongoClient:
             connectTimeoutMS=5000,
             socketTimeoutMS=10000,
         )
-
         logger.info("MongoDB client initialised (%s)", MONGO_URI)
 
     return _mongo_client
-
-
-# ─────────────────────────────────────────────────────────────
-# Graceful shutdown
-# ─────────────────────────────────────────────────────────────
-
-def close_connections() -> None:
-    """
-    Close all DB connections.
-    """
-
-    global _data_pool, _infra_pool, _mongo_client
-
-    if _data_pool:
-        _data_pool.disconnect()
-        _data_pool = None
-
-    if _infra_pool:
-        _infra_pool.disconnect()
-        _infra_pool = None
-
-    if _mongo_client:
-        _mongo_client.close()
-        _mongo_client = None
-
-    logger.info("All DB connections closed.")
